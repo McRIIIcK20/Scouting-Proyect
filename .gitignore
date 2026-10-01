@@ -1,0 +1,17 @@
+# Archivos de entorno y temporales de Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+
+# Archivos de Jupyter Notebooks ocultos
+.ipynb_checkpoints
+
+# Archivos de sistema (Windows/Mac)
+.DS_Store
+Thumbs.db
+
+# Ignorar archivos de datos muy pesados (opcional, por si tus CSV pesan más de 100MB)
+# datos/*.csv
+# datos/*.xlsx
