@@ -1,22 +1,26 @@
-# Modelo de Scouting y Eficiencia de Jugadores mediante Decisión Multicriterio
+# Data-Driven Football Scouting: Modelo Multicriterio para Delanteros (Enfoque Moneyball)
 
-**Autor:** Mario Andrés Coroseo Ramos  
-**Rol:** Estudiante de Ingeniería Civil Industrial
+## Resumen del Proyecto
+Este proyecto aplica técnicas de ciencia de datos e investigación de operaciones para identificar delanteros centro infravalorados en el mercado de la Premier League. Utilizando el algoritmo multicriterio **TOPSIS**, el modelo evalúa métricas ofensivas avanzadas (Goles Esperados, Asistencias Esperadas, Volumen de Tiros) penalizando simultáneamente el valor de mercado del jugador para encontrar eficiencias económicas ("Moneyball").
 
-## Descripción del Proyecto
-Este proyecto aplica modelos matemáticos de toma de decisiones y análisis de datos al ámbito del *Sports Analytics*. El objetivo es optimizar el proceso de *scouting* (búsqueda y selección de jugadores) identificando perfiles infravalorados en el mercado, maximizando el rendimiento deportivo y optimizando el presupuesto del club. 
+## Tecnologías y Herramientas
+* **Lenguaje:** Python (Pandas, NumPy)
+* **Entorno:** Visual Studio Code, Jupyter Notebooks
+* **Fuentes de Datos:** FBref (Standard/Shooting), Understat (xG/xA), Transfermarkt (Valoración económica vía Kaggle).
+* **Control de Versiones:** Git & GitHub
 
-El modelo está pensado para aportar valor en la gerencia deportiva de instituciones profesionales, aplicando lógicas de ingeniería industrial a la evaluación de planteles.
+## Metodología
+1. **Ingeniería de Datos:** Extracción y consolidación de 5 temporadas de datos (2020-2026).
+2. **Limpieza y Normalización:** Cruce relacional de más de 800 registros mediante estandarización de cadenas de texto y resolución de duplicados (`merge_asof`).
+3. **Restricciones de Modelo:** Filtro de minutos mínimos (>900 min) para asegurar significancia estadística.
+4. **Modelado Matemático (TOPSIS):** Construcción de una matriz de decisión donde se maximizan atributos de rendimiento (NPxG/90, SoT/90, xA/90) y se minimiza el costo (Valor de Mercado en Euros).
 
-## Tecnologías y Métodos Utilizados
-*   **Lenguajes y Herramientas:** Python (Pandas, NumPy), Microsoft Excel.
-*   **Métodos de Toma de Decisiones (MCDM):** Aplicación de algoritmos como AHP y TOPSIS para rankear jugadores basados en múltiples variables ponderadas de rendimiento.
-*   **Análisis de Datos:** Limpieza y estructuración de estadísticas avanzadas de fútbol (ej. FBref, StatsBomb).
+## Hallazgos Principales (Mercado 25/26)
+El algoritmo filtró a los perfiles de alto costo mediático, revelando las oportunidades de mercado más eficientes:
+* **Beto (Everton):** Lidera el ranking de eficiencia (Score: 0.7633) al ofrecer una producción ofensiva de élite (0.63 NPxG/90) por un valor de mercado contenido de €20M.
+* **Callum Wilson (West Ham):** Representa la opción de bajo riesgo financiero más sólida. Con un costo de apenas €5M, mantiene métricas sobresalientes (0.55 NPxG/90).
 
-## Estructura del Repositorio
-*   `/datos`: Datasets estadísticos utilizados para el análisis.
-*   `/notebooks`: Cuadernos de exploración de datos y limpieza.
-*   `/modelos`: Scripts con los algoritmos multicriterio aplicados al rendimiento por 90 minutos.
-
-## Resultados y Conclusiones
-*(Aquí agregaremos capturas de pantalla de tus resultados, gráficos de barras o tablas de Excel mostrando a los mejores jugadores según el modelo, una vez que procesemos los datos).*
+## Cómo ejecutar este proyecto
+1. Clona el repositorio: `git clone https://github.com/tu-usuario/Scouting-project.git`
+2. Activa el entorno virtual e instala dependencias: `pip install -r requirements.txt`
+3. Ejecuta los cuadernos en la carpeta `/notebooks` en orden secuencial.
