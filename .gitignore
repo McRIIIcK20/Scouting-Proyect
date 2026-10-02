@@ -15,3 +15,7 @@ Thumbs.db
 # Ignorar archivos de datos muy pesados (opcional, por si tus CSV pesan más de 100MB)
 # datos/*.csv
 # datos/*.xlsx
+
+# Ignorar carpetas de bases de datos locales
+datos/raw/
+datos/procesado/
