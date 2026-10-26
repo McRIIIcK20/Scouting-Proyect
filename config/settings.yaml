@@ -1,0 +1,23 @@
+# ============================================================
+# Scouting Lab — configuración estática
+# ============================================================
+# Matriz de comparación por pares de Saaty (AHP) para los 4 criterios
+# de scouting, en este orden:
+#   [NPxG/90, Tiros al arco/90, xA/90, Valor de mercado]
+#
+# Convención: a_ij = cuánto más importante es el criterio i que el j.
+# Matriz recíproca (a_ji = 1/a_ij) con diagonal unitaria.
+#
+# Pesos por defecto derivados de esta matriz (salida de ahp_weights,
+# documentados como referencia — se recalculan en cada ejecución):
+#   [0.45467033, 0.14114011, 0.14114011, 0.26304945]
+
+ahp:
+  criteria: ["NPxG/90", "Tiros al arco/90", "xA/90", "Valor de mercado"]
+  # true = criterio de beneficio (maximizar), false = coste (minimizar)
+  benefits: [true, true, true, false]
+  saaty_matrix:
+    - [1.0, 3.0, 3.0, 2.0]                 # NPxG
+    - [0.3333333333333333, 1.0, 1.0, 0.5]   # Tiros al arco
+    - [0.3333333333333333, 1.0, 1.0, 0.5]   # xA
+    - [0.5, 2.0, 2.0, 1.0]                  # Valor de mercado (coste)

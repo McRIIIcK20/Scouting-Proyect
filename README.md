@@ -24,3 +24,9 @@ El algoritmo filtró a los perfiles de alto costo mediático, revelando las opor
 1. Clona el repositorio: `git clone https://github.com/tu-usuario/Scouting-project.git`
 2. Activa el entorno virtual e instala dependencias: `pip install -r requirements.txt`
 3. Ejecuta los cuadernos en la carpeta `/notebooks` en orden secuencial.
+
+## ⚖️ Validación Cruzada (AHP + MABAC)
+Para dotar al modelo de rigor científico y eliminar el sesgo humano en la asignación de pesos, se integró el **Proceso de Análisis Jerárquico (AHP)** mediante matrices de Saaty (priorizando NPxG y Costo). 
+Posteriormente, el top de jugadores se sometió a una validación cruzada utilizando el algoritmo **MABAC** (Multi-Attributive Border Approximation Area). 
+
+**Resultado:** Perfiles como **Beto** y **Callum Wilson** mantuvieron sus posiciones en el Top 4 en ambos algoritmos matemáticos (TOPSIS y MABAC), confirmando empíricamente su estatus como oportunidades de máxima eficiencia financiera y deportiva.

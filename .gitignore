@@ -12,10 +12,10 @@ env/
 .DS_Store
 Thumbs.db
 
-# Ignorar archivos de datos muy pesados (opcional, por si tus CSV pesan más de 100MB)
-# datos/*.csv
-# datos/*.xlsx
+# Archivos comprimidos pesados en la raíz
+*.zip
+raw_.zip
+procesado_.zip
 
-# Ignorar carpetas de bases de datos locales
+# Ignorar carpetas de datos raw locales (pesados)
 datos/raw/
-datos/procesado/
