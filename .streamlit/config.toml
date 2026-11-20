@@ -1,0 +1,12 @@
+# Tema Console (Hallmark): grafito, tinta clara, ámbar solo para la selección.
+[theme]
+base = "dark"
+primaryColor = "#f7b83d"
+backgroundColor = "#0d1013"
+secondaryBackgroundColor = "#15191c"
+textColor = "#eceff2"
+font = "sans serif"
+borderColor = "#9da2a8"
+showWidgetBorder = true
+baseRadius = "6px"
+linkColor = "#eceff2"

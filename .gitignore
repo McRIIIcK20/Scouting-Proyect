@@ -19,3 +19,5 @@ procesado_.zip
 
 # Ignorar carpetas de datos raw locales (pesados)
 datos/raw/
+# Hallmark (capturas y registros locales)
+.hallmark/
