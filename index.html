@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <title>Scouting Lab | Moneyball</title>
+  <meta name="description" content="Scouting Lab: ranking de delanteros infravalorados con métodos multicriterio (AHP, TOPSIS, MABAC, MEREC y más), corriendo en el navegador.">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@stlite/browser@1.12.2/build/stlite.css">
+  <style>
+    html, body { margin: 0; background: #0d1013; color: #eceff2; font-family: system-ui, sans-serif; }
+    #loading { padding: 64px 24px; max-width: 640px; margin: 0 auto; line-height: 1.55; color: #c3c8cc; }
+    #loading h1 { font-weight: 500; color: #eceff2; margin: 0 0 12px; }
+  </style>
+</head>
+<body>
+  <div id="root">
+    <div id="loading">
+      <h1>Scouting Lab</h1>
+      <p>Cargando la app en tu navegador. La primera vez tarda entre 20 y 60 segundos porque descarga Python, pandas y Plotly; las siguientes visitas son más rápidas.</p>
+    </div>
+  </div>
+  <script type="module">
+    import { mount } from "https://cdn.jsdelivr.net/npm/@stlite/browser@1.12.2/build/stlite.js";
+
+    const files = [
+      "app.py",
+      "core/models.py",
+      "core/methods.py",
+      "config/settings.yaml",
+      "assets/style.css",
+      "assets/tokens.css",
+      "datos/procesado/resultados_finales.csv",
+      "datos/procesado/fw_base.csv",
+    ];
+
+    mount(
+      {
+        requirements: ["pandas", "numpy", "plotly", "pyyaml"],
+        entrypoint: "app.py",
+        files: Object.fromEntries(files.map((f) => [f, { url: "./" + f }])),
+        streamlitConfig: {
+          "theme.base": "dark",
+          "theme.primaryColor": "#f7b83d",
+          "theme.backgroundColor": "#0d1013",
+          "theme.secondaryBackgroundColor": "#15191c",
+          "theme.textColor": "#eceff2",
+          "theme.borderColor": "#9da2a8",
+          "theme.showWidgetBorder": true,
+          "theme.baseRadius": "6px",
+          "theme.linkColor": "#eceff2",
+          "client.toolbarMode": "viewer",
+        },
+      },
+      document.getElementById("root"),
+    );
+  </script>
+</body>
+</html>
