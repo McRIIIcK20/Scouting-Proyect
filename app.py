@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+import plotly.io as pio
 import streamlit as st
 import yaml
 
@@ -51,6 +52,7 @@ DATA_PATH = BASE_DIR / "datos" / "procesado" / "resultados_finales.csv"
 HIST_PATH = BASE_DIR / "datos" / "procesado" / "fw_base.csv"
 FOTOS_DIR = BASE_DIR / "fotos_accion"
 STYLE_PATH = BASE_DIR / "assets" / "style.css"
+TOKENS_PATH = BASE_DIR / "assets" / "tokens.css"
 SETTINGS_PATH = BASE_DIR / "config" / "settings.yaml"
 
 with SETTINGS_PATH.open("r", encoding="utf-8") as _settings_file:
@@ -70,7 +72,12 @@ AHP_SLIDER_KEYS = [
 # ESTILO
 # ============================================================
 
-css = STYLE_PATH.read_text(encoding="utf-8")
+# style.css lleva el sello y la fuente; tokens.css (los colores y la escala
+# del tema) se inserta en el marcador para que todo viaje en un solo <style>.
+css = STYLE_PATH.read_text(encoding="utf-8").replace(
+    "/* @tokens */",
+    TOKENS_PATH.read_text(encoding="utf-8"),
+)
 
 # st.html oculta los bloques sin altura visible (.empty-html), lo que
 # eliminaria el espaciado que dejaba st.markdown; el <div> de 1px con
@@ -79,6 +86,70 @@ st.html(
     f"<style>{css}</style>"
     '<div aria-hidden="true" style="height:1px;margin-bottom:-1px;"></div>'
 )
+
+
+# Paleta del tema Console en hex (Plotly no lee variables CSS).
+# Ámbar = lo que elige una persona (la selección, las gemas);
+# azul frío = lo que mide el modelo (series, escalas).
+PALETTE = {
+    "paper": "#0d1013",
+    "paper_2": "#15191c",
+    "paper_3": "#06080b",
+    "ink": "#eceff2",
+    "ink_2": "#c3c8cc",
+    "muted": "#9da2a8",
+    "rule": "#2d3135",
+    "rule_2": "#484e54",
+    "accent": "#f7b83d",
+    "cool": "#6ebcfc",
+    "cool_mid": "#3b79ad",
+    "cool_soft": "#142e43",
+    "ok": "#61cb7c",
+    "bad": "#f66d67",
+}
+_axis = dict(
+    gridcolor=PALETTE["rule"],
+    zerolinecolor=PALETTE["rule_2"],
+    linecolor=PALETTE["rule"],
+    tickfont=dict(color=PALETTE["muted"]),
+    title=dict(font=dict(color=PALETTE["ink_2"])),
+)
+pio.templates["scouting"] = go.layout.Template(
+    layout=dict(
+        font=dict(
+            family="Host Grotesk, ui-sans-serif, system-ui, sans-serif",
+            color=PALETTE["ink_2"],
+            size=13,
+        ),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        colorway=[
+            PALETTE["cool"],
+            PALETTE["accent"],
+            PALETTE["ok"],
+            PALETTE["bad"],
+            PALETTE["muted"],
+        ],
+        xaxis=_axis,
+        yaxis=_axis,
+        polar=dict(
+            bgcolor="rgba(0,0,0,0)",
+            radialaxis=dict(gridcolor=PALETTE["rule"], linecolor=PALETTE["rule"], tickfont=dict(color=PALETTE["muted"])),
+            angularaxis=dict(gridcolor=PALETTE["rule"], linecolor=PALETTE["rule_2"], tickfont=dict(color=PALETTE["ink_2"])),
+        ),
+        hoverlabel=dict(
+            bgcolor=PALETTE["paper_3"],
+            bordercolor=PALETTE["rule_2"],
+            font=dict(color=PALETTE["ink"], family="Atkinson Hyperlegible Mono, ui-monospace, monospace"),
+        ),
+        title=dict(font=dict(color=PALETTE["ink"], size=15)),
+        legend=dict(font=dict(color=PALETTE["ink_2"])),
+        coloraxis=dict(colorbar=dict(outlinewidth=0, tickfont=dict(color=PALETTE["muted"]))),
+    )
+)
+CHART_TEMPLATE = "plotly_dark+scouting"
+SCALE_COOL = [PALETTE["cool_soft"], PALETTE["cool_mid"], PALETTE["cool"]]
+SCALE_COOL_REV = [PALETTE["cool"], PALETTE["cool_mid"], PALETTE["cool_soft"]]
 
 
 # ============================================================
@@ -704,10 +775,10 @@ current = add_extra_metrics(
 
 with st.sidebar:
 
-    st.markdown("## 🎛️ Filtros de scouting")
+    st.markdown("## Filtros de scouting")
 
     st.info(
-        "📌 Ranking actual basado en la temporada 25/26 "
+        "Ranking actual basado en la temporada 25/26 "
         "cuando está disponible."
     )
 
@@ -774,7 +845,7 @@ with st.sidebar:
         step=50,
     )
 
-    with st.expander("⚙️ Parámetros Three-Way"):
+    with st.expander("Parámetros Three-Way"):
         tw_alpha = st.slider(
             "α (aceptar si PC ≥ α)",
             0.05, 1.0,
@@ -791,12 +862,12 @@ with st.sidebar:
             st.warning("β debe ser menor que α; se ajusta β = α − 0.05.")
             tw_beta = max(0.0, tw_alpha - 0.05)
 
-    with st.expander("🧠 Métodos disponibles"):
+    with st.expander("Métodos disponibles"):
         st.markdown(
             "\n\n".join(
                 f"**{m.label}**"
                 + ("" if m.higher_is_better else " · _menor = mejor_")
-                + f" — {m.description}"
+                + f": {m.description}"
                 for m in RANKING_METHODS.values()
             )
             + "\n\n---\n\n"
@@ -827,7 +898,7 @@ with st.sidebar:
             default_percents,
         ):
             value = st.slider(
-                f"⚖️ {criterion}",
+                f"{criterion}",
                 min_value=0,
                 max_value=100,
                 value=st.session_state.get(key, pct),
@@ -891,10 +962,12 @@ with st.sidebar:
     st.markdown(
         f"""
 <div class="sidebar-box">
-<h4>⚖️ Pesos efectivos · {weight_method}</h4>
+<h4>Pesos efectivos</h4>
+<p class="sidebar-meta">{weight_method}</p>
 """ +
 "".join(
-    f'{"🟢" if b else "🔴"} {c}: {w:.1%}<br>\n'
+    f'<div class="weight-row"><span>{c} <small>{"maximizar" if b else "minimizar"}</small></span>'
+    f'<span class="measured">{w:.1%}</span></div>\n'
     for c, w, b in zip(
         AHP_CRITERIA,
         effective_weights,
@@ -933,8 +1006,23 @@ ranked["Índice relativo"] = 1 - (
 # CABECERA
 # ============================================================
 
+st.markdown(
+    """
+<div class="hero">
+<h1 class="hero-title">Scouting Lab</h1>
+<p class="hero-copy">
+Modelo multicriterio para identificar delanteros centro con
+alta producción ofensiva, coste razonable y potencial de
+mercado en las principales ligas europeas. Data-driven
+recruitment, al estilo Moneyball.
+</p>
+</div>
+""",
+    unsafe_allow_html=True,
+)
+
 selected_name = st.selectbox(
-    "🔎 Busca y selecciona un delantero",
+    "Busca y selecciona un delantero",
     ranked["Jugador"].tolist(),
 )
 
@@ -966,26 +1054,6 @@ pointer-events:none;
     )
 
 
-st.markdown(
-    """
-<div class="hero">
-<div class="hero-kicker">
-DATA-DRIVEN RECRUITMENT · MONEYBALL
-</div>
-
-<div class="hero-title">
-SCOUTING <span style="color:#b7f36b">LAB</span>
-</div>
-
-<div class="hero-copy">
-Modelo multicriterio para identificar delanteros centro con
-alta producción ofensiva, coste razonable y potencial de
-mercado en las principales ligas europeas.
-</div>
-</div>
-""",
-    unsafe_allow_html=True,
-)
 
 
 # ============================================================
@@ -993,7 +1061,7 @@ mercado en las principales ligas europeas.
 # ============================================================
 
 st.markdown(
-    '<div class="section-label">Resumen del mercado</div>',
+    '<h2 class="section-head">Resumen del mercado</h2>',
     unsafe_allow_html=True,
 )
 
@@ -1039,7 +1107,7 @@ left, right = st.columns([1.25, 1])
 with left:
 
     st.markdown(
-        '<div class="section-label">Ranking del mercado</div>',
+        '<h2 class="section-head">Ranking del mercado</h2>',
         unsafe_allow_html=True,
     )
 
@@ -1062,12 +1130,8 @@ with left:
             "npxg": ":.2f",
             "Índice relativo": False,
         },
-        color_continuous_scale=[
-            "#153e52",
-            "#62e6d6",
-            "#b7f36b",
-        ],
-        template="plotly_dark",
+        color_continuous_scale=SCALE_COOL,
+        template=CHART_TEMPLATE,
     )
 
     if not method_meta.higher_is_better:
@@ -1098,7 +1162,7 @@ with left:
 with right:
 
     st.markdown(
-        '<div class="section-label">Moneyball · rendimiento vs coste</div>',
+        '<h2 class="section-head">Moneyball: rendimiento vs coste</h2>',
         unsafe_allow_html=True,
     )
 
@@ -1130,12 +1194,8 @@ with right:
             score_col: ":.4f",
             "Índice relativo": False,
         },
-        color_continuous_scale=[
-            "#153e52",
-            "#62e6d6",
-            "#b7f36b",
-        ],
-        template="plotly_dark",
+        color_continuous_scale=SCALE_COOL,
+        template=CHART_TEMPLATE,
     )
 
     fig_scatter.update_layout(
@@ -1163,7 +1223,7 @@ with right:
 st.markdown("---")
 
 st.markdown(
-    '<div class="section-label">💎 Gemas ocultas · bajo coste, alta producción</div>',
+    '<h2 class="section-head">Gemas ocultas: bajo coste, alta producción</h2>',
     unsafe_allow_html=True,
 )
 
@@ -1212,8 +1272,8 @@ else:
     n_gems = int(gems["Es gema"].sum())
 
     color_map = {
-        True: "#b7f36b",
-        False: "#3a5a7a",
+        True: PALETTE["accent"],
+        False: PALETTE["rule_2"],
     }
 
     fig_gems = px.scatter(
@@ -1232,20 +1292,20 @@ else:
             "Es gema": False,
         },
         log_x=True,
-        template="plotly_dark",
+        template=CHART_TEMPLATE,
     )
 
     fig_gems.add_vline(
         x=med_cost,
         line_dash="dot",
-        line_color="#62e6d6",
+        line_color=PALETTE["muted"],
         annotation_text=f"Mediana coste €{med_cost:.0f}M",
         annotation_position="top left",
     )
     fig_gems.add_hline(
         y=med_npxg,
         line_dash="dot",
-        line_color="#62e6d6",
+        line_color=PALETTE["muted"],
         annotation_text=f"Mediana NPxG {med_npxg:.2f}",
         annotation_position="bottom right",
     )
@@ -1253,7 +1313,7 @@ else:
     fig_gems.update_traces(
         marker=dict(
             opacity=0.85,
-            line=dict(width=1, color="#0b1727"),
+            line=dict(width=1, color=PALETTE["paper"]),
         ),
         selector=dict(mode="markers"),
     )
@@ -1268,12 +1328,12 @@ else:
             text=row["Jugador"],
             showarrow=True,
             arrowhead=2,
-            arrowcolor="#b7f36b",
+            arrowcolor=PALETTE["accent"],
             arrowsize=0.7,
             arrowwidth=1,
-            font=dict(size=10, color="#b7f36b"),
-            bgcolor="rgba(11,23,39,0.75)",
-            bordercolor="#29435a",
+            font=dict(size=11, color=PALETTE["accent"]),
+            bgcolor=PALETTE["paper_3"],
+            bordercolor=PALETTE["rule_2"],
             borderwidth=1,
             borderpad=2,
         )
@@ -1290,7 +1350,7 @@ else:
         plot_bgcolor="rgba(0,0,0,0)",
         xaxis=dict(
             title="Valor de mercado (€M) · escala log",
-            gridcolor="#1c3247",
+            gridcolor=PALETTE["rule"],
             # Rango fijo: el autorange de ejes log con shapes (add_vline)
             # dispara un bug de plotly.js que estira el eje hasta 10^12.
             # Con type="log", range va en EXPONENTES (log10 del valor).
@@ -1301,7 +1361,7 @@ else:
         ),
         yaxis=dict(
             title="NPxG/90",
-            gridcolor="#1c3247",
+            gridcolor=PALETTE["rule"],
         ),
         legend=dict(
             title_text="",
@@ -1316,7 +1376,7 @@ else:
     )
 
     st.caption(
-        f"💎 {n_gems} gemas ocultas de {len(gems)} jugadores "
+        f"{n_gems} gemas ocultas de {len(gems)} jugadores "
         f"({n_gems / len(gems):.0%}): coste por debajo de la mediana "
         f"(€{med_cost:.0f}M) y NPxG/90 por encima ({med_npxg:.2f})."
     )
@@ -1329,14 +1389,14 @@ else:
 st.markdown("---")
 
 st.markdown(
-    '<div class="section-label">Comparación de métodos MCDM</div>',
+    '<h2 class="section-head">Comparación de métodos MCDM</h2>',
     unsafe_allow_html=True,
 )
 
 st.caption(
     f"Los {len(METHOD_KEYS)} métodos de ranking usan la misma matriz "
     f"(NPxG/90, tiros al arco/90, xA/90, valor de mercado) y los pesos "
-    f"**{weight_method}** — salvo MEREC, que calcula sus propios pesos."
+    f"**{weight_method}**, salvo MEREC, que calcula sus propios pesos."
 )
 
 selected_methods = st.multiselect(
@@ -1364,10 +1424,10 @@ else:
 
     tab_cons, tab_heat, tab_corr, tab_3w = st.tabs(
         [
-            "🏆 Consenso",
-            "🗺️ Posición por método",
-            "🔗 Concordancia entre métodos",
-            "🚦 Decisión Three-Way",
+            "Consenso",
+            "Posición por método",
+            "Concordancia entre métodos",
+            "Decisión Three-Way",
         ]
     )
 
@@ -1383,7 +1443,7 @@ else:
                 base=plot_cons["Mejor posición"],
                 y=plot_cons["Jugador"],
                 orientation="h",
-                marker_color="rgba(98,230,214,0.25)",
+                marker_color=PALETTE["cool_soft"],
                 name="Rango (mejor–peor)",
                 hovertemplate="Mejor #%{base}<extra></extra>",
             )
@@ -1394,7 +1454,7 @@ else:
                 x=plot_cons["Ranking promedio"],
                 y=plot_cons["Jugador"],
                 mode="markers",
-                marker=dict(size=12, color="#b7f36b"),
+                marker=dict(size=12, color=PALETTE["cool"]),
                 name="Ranking promedio",
                 customdata=plot_cons[["Veces en Top 10"]],
                 hovertemplate=(
@@ -1405,7 +1465,7 @@ else:
         )
 
         fig_consensus.update_layout(
-            template="plotly_dark",
+            template=CHART_TEMPLATE,
             height=max(400, top_n * 27),
             paper_bgcolor="rgba(0,0,0,0)",
             plot_bgcolor="rgba(0,0,0,0)",
@@ -1431,10 +1491,10 @@ else:
             heat,
             text_auto=True,
             aspect="auto",
-            color_continuous_scale=["#b7f36b", "#62e6d6", "#153e52"],
+            color_continuous_scale=SCALE_COOL_REV,
             zmin=1,
             zmax=max(30, top_n * 2),
-            template="plotly_dark",
+            template=CHART_TEMPLATE,
         )
 
         fig_heat.update_layout(
@@ -1466,8 +1526,8 @@ else:
             aspect="auto",
             zmin=-1,
             zmax=1,
-            color_continuous_scale=["#7a2e3a", "#0b1727", "#62e6d6"],
-            template="plotly_dark",
+            color_continuous_scale=[PALETTE["bad"], PALETTE["paper_2"], PALETTE["cool"]],
+            template=CHART_TEMPLATE,
         )
 
         fig_corr.update_layout(
@@ -1515,9 +1575,9 @@ else:
         tw_counts = ranked["Decisión 3-Way"].value_counts()
 
         t1, t2, t3 = st.columns(3)
-        t1.metric("✅ Aceptar", int(tw_counts.get("Aceptar", 0)))
-        t2.metric("🟡 Frontera", int(tw_counts.get("Frontera", 0)))
-        t3.metric("⛔ Rechazar", int(tw_counts.get("Rechazar", 0)))
+        t1.metric("Aceptar", int(tw_counts.get("Aceptar", 0)))
+        t2.metric("Frontera", int(tw_counts.get("Frontera", 0)))
+        t3.metric("Rechazar", int(tw_counts.get("Rechazar", 0)))
 
         fig_tw = px.histogram(
             ranked,
@@ -1525,18 +1585,18 @@ else:
             color="Decisión 3-Way",
             nbins=40,
             color_discrete_map={
-                "Aceptar": "#b7f36b",
-                "Frontera": "#f2c94c",
-                "Rechazar": "#7a2e3a",
+                "Aceptar": PALETTE["ok"],
+                "Frontera": PALETTE["accent"],
+                "Rechazar": PALETTE["bad"],
             },
             category_orders={
                 "Decisión 3-Way": ["Aceptar", "Frontera", "Rechazar"]
             },
-            template="plotly_dark",
+            template=CHART_TEMPLATE,
         )
-        fig_tw.add_vline(x=tw_alpha, line_dash="dot", line_color="#b7f36b",
+        fig_tw.add_vline(x=tw_alpha, line_dash="dot", line_color=PALETTE["ok"],
                          annotation_text=f"α = {tw_alpha:.2f}")
-        fig_tw.add_vline(x=tw_beta, line_dash="dot", line_color="#ff8a80",
+        fig_tw.add_vline(x=tw_beta, line_dash="dot", line_color=PALETTE["bad"],
                          annotation_text=f"β = {tw_beta:.2f}",
                          annotation_position="top left")
         fig_tw.update_layout(
@@ -1573,7 +1633,7 @@ else:
 st.markdown("---")
 
 st.markdown(
-    '<div class="section-label">Comparación de métodos de pesos</div>',
+    '<h2 class="section-head">Comparación de métodos de pesos</h2>',
     unsafe_allow_html=True,
 )
 
@@ -1593,8 +1653,8 @@ fig_weights = px.bar(
     y="Peso",
     color="Criterio",
     text=weights_long["Peso"].map(lambda x: f"{x:.0%}"),
-    color_discrete_sequence=["#b7f36b", "#62e6d6", "#5b8def", "#ff8a80"],
-    template="plotly_dark",
+    color_discrete_sequence=[PALETTE["cool"], PALETTE["accent"], PALETTE["ink_2"], PALETTE["muted"]],
+    template=CHART_TEMPLATE,
 )
 
 fig_weights.update_layout(
@@ -1644,7 +1704,7 @@ st.caption(
 st.markdown("---")
 
 st.markdown(
-    '<div class="section-label">Player Intelligence</div>',
+    '<h2 class="section-head">Player Intelligence</h2>',
     unsafe_allow_html=True,
 )
 
@@ -1683,13 +1743,8 @@ with p1:
         else:
             st.markdown(
                 """
-<div class="panel"
-style="
-text-align:center;
-padding:45px 12px;
-font-size:4rem;
-">
-⚽
+<div class="panel photo-empty">
+Sin foto disponible
 </div>
 """,
                 unsafe_allow_html=True,
@@ -1698,7 +1753,7 @@ font-size:4rem;
     st.markdown(
         f"""
 <div class="player-card">
-<h2 style="margin-bottom:4px;">
+<h2>
 {profile["Jugador"].title()}
 </h2>
 
@@ -1828,8 +1883,8 @@ fig_player_ranks = px.bar(
     y="Posición",
     text="Posición",
     color="Posición",
-    color_continuous_scale=["#b7f36b", "#62e6d6", "#153e52"],
-    template="plotly_dark",
+    color_continuous_scale=SCALE_COOL_REV,
+    template=CHART_TEMPLATE,
 )
 fig_player_ranks.update_layout(
     height=300,
@@ -1870,7 +1925,7 @@ if extra_available:
     st.markdown("---")
 
     st.markdown(
-        '<div class="section-label">Perfil de juego y acciones ofensivas</div>',
+        '<h2 class="section-head">Perfil de juego y acciones ofensivas</h2>',
         unsafe_allow_html=True,
     )
 
@@ -1911,7 +1966,7 @@ if not history.empty:
     st.markdown("---")
 
     st.markdown(
-        '<div class="section-label">Evolución histórica</div>',
+        '<h2 class="section-head">Evolución histórica</h2>',
         unsafe_allow_html=True,
     )
 
@@ -1980,7 +2035,7 @@ if not history.empty:
             )
 
         fig_hist.update_layout(
-            template="plotly_dark",
+            template=CHART_TEMPLATE,
             height=350,
             paper_bgcolor="rgba(0,0,0,0)",
             plot_bgcolor="rgba(0,0,0,0)",
@@ -2013,7 +2068,7 @@ if not history.empty:
 st.markdown("---")
 
 st.markdown(
-    '<div class="section-label">Radar de rendimiento</div>',
+    '<h2 class="section-head">Radar de rendimiento</h2>',
     unsafe_allow_html=True,
 )
 
@@ -2073,7 +2128,7 @@ fig_radar.update_layout(
             range=[0, 100],
         )
     ),
-    template="plotly_dark",
+    template=CHART_TEMPLATE,
     height=400,
     paper_bgcolor="rgba(0,0,0,0)",
 )
@@ -2091,7 +2146,7 @@ st.plotly_chart(
 st.markdown("---")
 
 st.markdown(
-    '<div class="section-label">Data Explorer · ranking completo</div>',
+    '<h2 class="section-head">Data Explorer: ranking completo</h2>',
     unsafe_allow_html=True,
 )
 
