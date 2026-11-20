@@ -2148,4 +2148,4 @@ st.download_button(
     data=csv_download,
     file_name="ranking_scouting_actual.csv",
     mime="text/csv",
-)
+)
