@@ -288,8 +288,17 @@ def merec(
     if benefits.shape != (n,):
         raise ValueError("benefits must match n_criteria")
 
-    # Ensure strictly positive
-    X_safe = np.maximum(X, eps)
+    # Ensure strictly positive. MEREC trabaja con razones min/x y ln(), por lo
+    # que un 0 reemplazado por eps (1e-12) dispara |ln n| ≈ 27 y acapara todo el
+    # peso. Los valores ≤ 0 se sustituyen por el menor valor positivo de su
+    # columna (o eps si la columna no tiene positivos).
+    X_safe = X.copy()
+    for j in range(X_safe.shape[1]):
+        col = X_safe[:, j]
+        positive = col[col > 0]
+        floor = positive.min() if positive.size else eps
+        X_safe[:, j] = np.where(col > 0, col, floor)
+    X_safe = np.maximum(X_safe, eps)
 
     # Step 1: Normalization specific to MEREC
     Z = np.zeros_like(X_safe)
@@ -311,7 +320,9 @@ def merec(
     for j in range(n):
         Z_without = np.delete(Z, j, axis=1)
         log_Zw = np.log(Z_without + eps)
-        S_without = np.log(1.0 + np.abs(log_Zw).sum(axis=1) / (n - 1))
+        # Keshavarz-Ghorabaee et al. (2021): S'_ij = ln(1 + (1/n) Σ_{k≠j} |ln n_ik|)
+        # (se divide por n, no por n-1 — igual que en la guía del ramo)
+        S_without = np.log(1.0 + np.abs(log_Zw).sum(axis=1) / n)
         effects[j] = np.sum(np.abs(S_without - S))
 
     # Step 4: Objective weights

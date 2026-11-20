@@ -21,3 +21,41 @@ ahp:
     - [0.3333333333333333, 1.0, 1.0, 0.5]   # Tiros al arco
     - [0.3333333333333333, 1.0, 1.0, 0.5]   # xA
     - [0.5, 2.0, 2.0, 1.0]                  # Valor de mercado (coste)
+
+# ============================================================
+# Métodos de pesos adicionales (ramo Toma de Decisiones MCDM)
+# Mismo orden de criterios: [NPxG/90, Tiros al arco/90, xA/90, Valor de mercado]
+# ============================================================
+
+swara:
+  # Orden de importancia según el "experto" (índices de criterio, del más
+  # al menos importante) y s_j = cuánto menos importante es cada uno
+  # respecto al anterior (el primero siempre 0).
+  #   NPxG → Valor de mercado → Tiros al arco → xA
+  order: [0, 3, 1, 2]
+  s: [0.0, 0.4, 0.5, 0.1]
+
+itara:
+  # Umbral de indiferencia en unidades normalizadas (x/max ó min/x).
+  # Diferencias entre jugadores adyacentes menores a esto no aportan peso.
+  threshold: 0.01
+
+bwm:
+  # Mejor criterio = NPxG/90 ; peor criterio = Tiros al arco/90 (empatado con xA)
+  best_to_others: [1, 4, 4, 2]   # a_Bj (escala 1–9)
+  others_to_worst: [4, 1, 1, 2]  # a_jW (escala 1–9)
+
+anp:
+  # influence[i][j] = cuánto influye el criterio i desde el punto de vista del
+  # criterio j (columna = matriz de influencia de ese criterio, escala 0–9).
+  # Ej.: los tiros al arco explican buena parte del NPxG y el valor de mercado
+  # se explica sobre todo por la producción goleadora.
+  influence:
+    - [5, 4, 1, 5]   # NPxG
+    - [3, 3, 1, 2]   # Tiros al arco
+    - [1, 1, 3, 2]   # xA
+    - [1, 1, 1, 3]   # Valor de mercado
+
+three_way:
+  alpha: 0.6   # PC ≥ α → Aceptar
+  beta: 0.4    # PC ≤ β → Rechazar (entre ambos → Frontera)
