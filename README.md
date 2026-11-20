@@ -30,3 +30,36 @@ Para dotar al modelo de rigor científico y eliminar el sesgo humano en la asign
 Posteriormente, el top de jugadores se sometió a una validación cruzada utilizando el algoritmo **MABAC** (Multi-Attributive Border Approximation Area). 
 
 **Resultado:** Perfiles como **Beto** y **Callum Wilson** mantuvieron sus posiciones en el Top 4 en ambos algoritmos matemáticos (TOPSIS y MABAC), confirmando empíricamente su estatus como oportunidades de máxima eficiencia financiera y deportiva.
+## 🧮 Laboratorio MCDM: 16 métodos de ranking + 8 esquemas de pesos
+La app (`streamlit run app.py`) ahora compara **todos los métodos vistos en el ramo Toma de Decisiones (MCDM)** sobre la misma matriz de decisión (NPxG/90 ↑, Tiros al arco/90 ↑, xA/90 ↑, Valor de mercado ↓).
+
+| Tipo | Métodos | Dónde |
+|---|---|---|
+| **Pesos subjetivos** | AHP (con CR), SWARA, BWM (con ξ y CR), ANP (supermatriz límite) | `config/settings.yaml` |
+| **Pesos objetivos** | Entropía, MEREC, ITARA | se calculan con los jugadores filtrados |
+| **Ranking** | TOPSIS, MABAC, MEREC, SAW, COPRAS, VIKOR, MOORA, MULTIMOORA, WASPAS, CoCoSo, MAIRCA, DN-MARCOS, RAFSI, Grey (GRA), Fuzzy TOPSIS, Three-Way | `core/methods.py` |
+
+En la barra lateral se elige el **método de pesos** y el **modelo de ranking**. La sección *Comparación de métodos MCDM* muestra:
+* **Consenso:** ranking promedio y rango mejor–peor posición de cada jugador entre los métodos elegidos.
+* **Posición por método:** mapa de calor de la posición de cada jugador en cada método.
+* **Concordancia:** correlación de Spearman entre los rankings (qué métodos piensan parecido).
+* **Three-Way:** shortlist *Aceptar / Frontera / Rechazar* con umbrales α y β ajustables.
+* **Comparación de pesos:** los 8 esquemas de ponderación lado a lado.
+
+### Validación
+`tests/test_methods.py` reproduce los resultados de las planillas del ramo (CoCoSo, MAIRCA, DN-MARCOS, SWARA, ITARA, MOORA, MULTIMOORA, Entropía, MEREC, SAW, TOPSIS, COPRAS, MABAC y VIKOR) y verifica propiedades básicas (dominancia, monotonía del costo, rankings válidos) de los 16 métodos.
+
+Notas de implementación:
+* **MEREC** ahora divide por *n* (no por *n−1*) al quitar un criterio, como en Keshavarz-Ghorabaee et al. (2021) y la guía del ramo, y reemplaza los ceros por el menor valor positivo de la columna (antes un xA = 0 se llevaba casi todo el peso).
+* **Fuzzy TOPSIS** fuzzifica cada métrica como número triangular (x·0.9, x, x·1.1) porque los datos son nítidos.
+* **RAFSI** usa como ideal/anti-ideal los extremos observados y *n₂ₖ* = N° de jugadores (como en el formulario).
+* **DN-MARCOS** usa 1 − x/‖x‖ en la parte vectorial de criterios de costo; con `vector_cost="raw"` replica exactamente la planilla del ramo.
+* **ITARA** usa la normalización del formulario (x/max, min/x) y un umbral de indiferencia de 0.01.
+
+Referencias de los métodos que no tenían planilla: Rezaei (2015, 2016) para BWM; Saaty (1996) para ANP; Žižović et al. (2020, *Mathematics* 8(6):1015) para RAFSI; Chen (2000) para Fuzzy TOPSIS; Deng (1989) para el análisis relacional gris; Yao (2010) para Three-Way Decisions; Zavadskas et al. (2012) para WASPAS; Yazdani et al. (2019) para CoCoSo.
+
+```bash
+pip install -r requirements.txt
+pytest tests/ -v
+streamlit run app.py
+```

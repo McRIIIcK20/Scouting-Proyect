@@ -20,6 +20,18 @@ from core.models import (
     mabac as _mabac,
     topsis as _topsis,
 )
+from core.methods import (
+    RANKING_METHODS,
+    WEIGHT_METHODS,
+    ahp_consistency,
+    anp_weights,
+    bwm_weights,
+    entropy_weights,
+    itara_weights,
+    ranks_from_scores,
+    swara_weights,
+    three_way,
+)
 
 
 # ============================================================
@@ -391,86 +403,105 @@ def merec(
 # RANKING
 # ============================================================
 
+CRITERIA_COLS = [
+    "npxg",
+    "shots_on_target",
+    "xa",
+    "Valor (€)",
+]
+
+CRITERIA_BENEFITS = np.array(
+    [True, True, True, False],
+    dtype=bool,
+)
+
+METHOD_KEYS = list(RANKING_METHODS)
+METHOD_LABELS = {k: m.label for k, m in RANKING_METHODS.items()}
+
+
 def rank_frame(
     df: pd.DataFrame,
     weights: Optional[np.ndarray] = None,
+    tw_alpha: float = 0.6,
+    tw_beta: float = 0.4,
 ) -> tuple[pd.DataFrame, np.ndarray]:
+    """
+    Ejecuta los 16 métodos de ranking sobre la misma matriz de decisión y
+    con los mismos pesos (salvo MEREC, que calcula los suyos).
+    Crea Puntaje_<MÉTODO> y Rank_<MÉTODO> (1 = mejor) para cada uno.
+    """
 
     df = df.copy()
 
-    criteria = [
-        "npxg",
-        "shots_on_target",
-        "xa",
-        "Valor (€)",
-    ]
+    X = impute_matrix(df, CRITERIA_COLS)
+    benefits = CRITERIA_BENEFITS
 
-    benefits = np.array(
-        [True, True, True, False],
-        dtype=bool,
-    )
-
-    X = impute_matrix(df, criteria)
-
-    weights_ahp = (
+    weights_used = (
         ahp_weights()
         if weights is None
         else np.asarray(weights, dtype=float)
     )
 
-    df["Puntaje_TOPSIS"] = topsis(
-        X,
-        weights_ahp,
-        benefits,
-    )
+    _, weights_merec = merec(X, benefits=benefits)
 
-    df["Puntaje_MABAC"] = mabac(
-        X,
-        weights_ahp,
-        benefits,
-    )
+    # Desempate común: más NPxG y luego menor valor de mercado
+    tie_npxg = -df["npxg"].fillna(-np.inf).to_numpy()
+    tie_value = df["Valor (€)"].fillna(np.inf).to_numpy()
 
-    df["Puntaje_MEREC"], weights_merec = merec(
-        X,
-        benefits=benefits,
-    )
+    for key, meth in RANKING_METHODS.items():
 
-    for method in ["TOPSIS", "MABAC", "MEREC"]:
-
-        score_col = f"Puntaje_{method}"
-
-        ordered = (
-            df.sort_values(
-                [
-                    score_col,
-                    "npxg",
-                    "Valor (€)",
-                ],
-                ascending=[
-                    False,
-                    False,
-                    True,
-                ],
-                na_position="last",
+        if key == "THREE_WAY":
+            tw = three_way(
+                X,
+                weights_used,
+                benefits,
+                alpha=tw_alpha,
+                beta=tw_beta,
             )
-            .index
-        )
+            scores = tw.pc
+            df["Decisión 3-Way"] = tw.decision
+        else:
+            scores = np.asarray(
+                meth.run(X, weights_used, benefits),
+                dtype=float,
+            )
 
-        ranks = pd.Series(
-            np.arange(
-                1,
-                len(ordered) + 1,
-            ),
-            index=ordered,
-        )
+        df[f"Puntaje_{key}"] = scores
 
-        df[f"Rank_{method}"] = (
-            ranks
-            .reindex(df.index)
-            .astype(int)
-        )
+        primary = -scores if meth.higher_is_better else scores
+        order = np.lexsort((tie_value, tie_npxg, primary))
+        ranks = np.empty(len(df), dtype=int)
+        ranks[order] = np.arange(1, len(df) + 1)
+        df[f"Rank_{key}"] = ranks
 
     return df, weights_merec
+
+
+def weight_sets(df: pd.DataFrame) -> dict[str, np.ndarray]:
+    """Pesos de cada método de ponderación sobre los jugadores filtrados."""
+    X = impute_matrix(df, CRITERIA_COLS)
+    cfg = SETTINGS
+    return {
+        "AHP": ahp_weights(),
+        "Entropía": entropy_weights(X),
+        "MEREC": merec(X, benefits=CRITERIA_BENEFITS)[1],
+        "SWARA": swara_weights(
+            cfg["swara"]["order"],
+            cfg["swara"]["s"],
+        ),
+        "ITARA": itara_weights(
+            X,
+            CRITERIA_BENEFITS,
+            thresholds=float(cfg["itara"]["threshold"]),
+        ),
+        "BWM": bwm_weights(
+            cfg["bwm"]["best_to_others"],
+            cfg["bwm"]["others_to_worst"],
+        ).weights,
+        "ANP": anp_weights(
+            np.array(cfg["anp"]["influence"], dtype=float)
+        ).weights,
+    }
 
 
 # ============================================================
@@ -709,11 +740,23 @@ with st.sidebar:
 
     method = st.selectbox(
         "Modelo de ranking",
-        [
-            "TOPSIS",
-            "MABAC",
-            "MEREC",
-        ],
+        METHOD_KEYS,
+        format_func=lambda k: (
+            METHOD_LABELS[k]
+            + ("" if RANKING_METHODS[k].higher_is_better else " (menor = mejor)")
+        ),
+    )
+
+    weight_method = st.selectbox(
+        "Método de pesos",
+        WEIGHT_METHODS,
+        index=WEIGHT_METHODS.index("Manual (sliders)"),
+        help=(
+            "Manual: sliders que arrancan en AHP. "
+            "AHP / SWARA / BWM / ANP: pesos subjetivos definidos en "
+            "config/settings.yaml. Entropía / MEREC / ITARA: pesos "
+            "objetivos calculados con los jugadores filtrados."
+        ),
     )
 
     top_n = st.slider(
@@ -731,86 +774,79 @@ with st.sidebar:
         step=50,
     )
 
-    st.markdown(
-        """
-<div class="sidebar-box">
-<h4>🧠 Modelos utilizados</h4>
+    with st.expander("⚙️ Parámetros Three-Way"):
+        tw_alpha = st.slider(
+            "α (aceptar si PC ≥ α)",
+            0.05, 1.0,
+            float(SETTINGS["three_way"]["alpha"]),
+            0.05,
+        )
+        tw_beta = st.slider(
+            "β (rechazar si PC ≤ β)",
+            0.0, 0.95,
+            float(SETTINGS["three_way"]["beta"]),
+            0.05,
+        )
+        if tw_beta >= tw_alpha:
+            st.warning("β debe ser menor que α; se ajusta β = α − 0.05.")
+            tw_beta = max(0.0, tw_alpha - 0.05)
 
-<b>TOPSIS</b><br>
-Busca jugadores cercanos al perfil ideal y alejados del peor perfil.
-
-<br><br>
-
-<b>MABAC</b><br>
-Compara el desempeño de cada jugador respecto al área fronteriza.
-
-<br><br>
-
-<b>MEREC</b><br>
-Calcula pesos objetivos según el efecto que tiene eliminar cada criterio.
-No utiliza los pesos AHP.
-</div>
-""",
-        unsafe_allow_html=True,
-    )
+    with st.expander("🧠 Métodos disponibles"):
+        st.markdown(
+            "\n\n".join(
+                f"**{m.label}**"
+                + ("" if m.higher_is_better else " · _menor = mejor_")
+                + f" — {m.description}"
+                for m in RANKING_METHODS.values()
+            )
+            + "\n\n---\n\n"
+            "**Pesos:** AHP, Entropía, MEREC (ramo, 1ª prueba) · "
+            "SWARA, ITARA, BWM, ANP (2ª prueba)."
+        )
 
     default_weights = ahp_weights()
     default_percents = [
         int(round(w * 100)) for w in default_weights
     ]
 
-    # Pesos por criterio: sliders 0-100 (arrancan en los pesos AHP)
-    reset_weights = st.button("Restablecer a AHP")
+    slider_percents = default_percents
 
-    if reset_weights:
-        for key, pct in zip(AHP_SLIDER_KEYS, default_percents):
-            st.session_state[key] = pct
+    if weight_method == "Manual (sliders)":
 
-    slider_percents = []
-    for key, criterion, pct in zip(
-        AHP_SLIDER_KEYS,
-        AHP_CRITERIA,
-        default_percents,
-    ):
-        value = st.slider(
-            f"⚖️ {criterion}",
-            min_value=0,
-            max_value=100,
-            value=st.session_state.get(key, pct),
-            key=key,
-        )
-        slider_percents.append(value)
+        # Pesos por criterio: sliders 0-100 (arrancan en los pesos AHP)
+        reset_weights = st.button("Restablecer a AHP")
+
+        if reset_weights:
+            for key, pct in zip(AHP_SLIDER_KEYS, default_percents):
+                st.session_state[key] = pct
+
+        slider_percents = []
+        for key, criterion, pct in zip(
+            AHP_SLIDER_KEYS,
+            AHP_CRITERIA,
+            default_percents,
+        ):
+            value = st.slider(
+                f"⚖️ {criterion}",
+                min_value=0,
+                max_value=100,
+                value=st.session_state.get(key, pct),
+                key=key,
+            )
+            slider_percents.append(value)
 
     total = sum(slider_percents)
 
     if total == 0:
-        effective_weights = default_weights
+        manual_weights = default_weights
         st.warning(
             "Todos los pesos están en 0: se usan los pesos AHP "
             "por defecto."
         )
     else:
-        effective_weights = (
+        manual_weights = (
             np.array(slider_percents, dtype=float) / total
         )
-
-    st.markdown(
-        f"""
-<div class="sidebar-box">
-<h4>⚖️ Pesos efectivos (normalizados)</h4>
-""" +
-"".join(
-    f'{"🟢" if b else "🔴"} {c}: {w:.1%}<br>\n'
-    for c, w, b in zip(
-        AHP_CRITERIA,
-        effective_weights,
-        AHP_BENEFITS,
-    )
-)
-        + """</div>
-""",
-        unsafe_allow_html=True,
-    )
 
 
 # ============================================================
@@ -843,10 +879,41 @@ if filtered.empty:
 # RANKING RECALCULADO
 # ============================================================
 
+all_weight_sets = weight_sets(filtered)
+
+effective_weights = (
+    manual_weights
+    if weight_method == "Manual (sliders)"
+    else all_weight_sets[weight_method]
+)
+
+with st.sidebar:
+    st.markdown(
+        f"""
+<div class="sidebar-box">
+<h4>⚖️ Pesos efectivos · {weight_method}</h4>
+""" +
+"".join(
+    f'{"🟢" if b else "🔴"} {c}: {w:.1%}<br>\n'
+    for c, w, b in zip(
+        AHP_CRITERIA,
+        effective_weights,
+        AHP_BENEFITS,
+    )
+)
+        + """</div>
+""",
+        unsafe_allow_html=True,
+    )
+
 ranked, merec_weights = rank_frame(
     filtered,
     weights=effective_weights,
+    tw_alpha=tw_alpha,
+    tw_beta=tw_beta,
 )
+method_meta = RANKING_METHODS[method]
+method_label = METHOD_LABELS[method]
 
 rank_col = f"Rank_{method}"
 score_col = f"Puntaje_{method}"
@@ -854,6 +921,12 @@ score_col = f"Puntaje_{method}"
 ranked = ranked.sort_values(
     rank_col
 ).reset_index(drop=True)
+
+# Índice 0–1 (1 = mejor) para colorear igual en métodos "mayor = mejor"
+# y "menor = mejor" (VIKOR, MAIRCA).
+ranked["Índice relativo"] = 1 - (
+    (ranked[rank_col] - 1) / max(len(ranked) - 1, 1)
+)
 
 
 # ============================================================
@@ -952,7 +1025,8 @@ k4.metric(
 
 k5.metric(
     "Modelo activo",
-    method,
+    method_label,
+    help=f"Pesos: {weight_method}",
 )
 
 
@@ -973,19 +1047,20 @@ with left:
 
     fig_rank = px.bar(
         top.sort_values(
-            score_col,
-            ascending=True,
+            rank_col,
+            ascending=False,
         ),
         x=score_col,
         y="Jugador",
         orientation="h",
-        color=score_col,
+        color="Índice relativo",
         hover_data={
             "Equipo": True,
             rank_col: True,
             score_col: ":.4f",
             "Valor (€)": True,
             "npxg": ":.2f",
+            "Índice relativo": False,
         },
         color_continuous_scale=[
             "#153e52",
@@ -994,6 +1069,12 @@ with left:
         ],
         template="plotly_dark",
     )
+
+    if not method_meta.higher_is_better:
+        st.caption(
+            f"En {method_label} un score MENOR es mejor: "
+            "las barras más cortas son los mejores jugadores."
+        )
 
     fig_rank.update_layout(
         height=500,
@@ -1038,7 +1119,7 @@ with right:
         x="Valor visual (€M)",
         y="npxg",
         size="Tamaño",
-        color=score_col,
+        color="Índice relativo",
         hover_name="Jugador",
         hover_data={
             "Equipo": True,
@@ -1047,6 +1128,7 @@ with right:
             "shots_on_target": ":.2f",
             "xa": ":.2f",
             score_col: ":.4f",
+            "Índice relativo": False,
         },
         color_continuous_scale=[
             "#153e52",
@@ -1241,150 +1323,318 @@ else:
 
 
 # ============================================================
-# COMPARACIÓN DE LOS 3 MODELOS
+# COMPARACIÓN DE MÉTODOS MCDM
 # ============================================================
 
 st.markdown("---")
 
 st.markdown(
-    '<div class="section-label">Consenso multicriterio</div>',
+    '<div class="section-label">Comparación de métodos MCDM</div>',
     unsafe_allow_html=True,
 )
 
-consensus = ranked[
-    [
-        "Jugador",
-        "Rank_TOPSIS",
-        "Rank_MABAC",
-        "Rank_MEREC",
-    ]
-].copy()
-
-consensus["Ranking promedio"] = consensus[
-    [
-        "Rank_TOPSIS",
-        "Rank_MABAC",
-        "Rank_MEREC",
-    ]
-].mean(axis=1)
-
-consensus = consensus.sort_values(
-    "Ranking promedio"
-).head(top_n)
-
-fig_consensus = px.bar(
-    consensus.sort_values(
-        "Ranking promedio",
-        ascending=False,
-    ),
-    x="Ranking promedio",
-    y="Jugador",
-    orientation="h",
-    color="Ranking promedio",
-    color_continuous_scale=[
-        "#b7f36b",
-        "#62e6d6",
-        "#153e52",
-    ],
-    template="plotly_dark",
+st.caption(
+    f"Los {len(METHOD_KEYS)} métodos de ranking usan la misma matriz "
+    f"(NPxG/90, tiros al arco/90, xA/90, valor de mercado) y los pesos "
+    f"**{weight_method}** — salvo MEREC, que calcula sus propios pesos."
 )
 
-fig_consensus.update_layout(
-    height=max(400, top_n * 27),
-    paper_bgcolor="rgba(0,0,0,0)",
-    plot_bgcolor="rgba(0,0,0,0)",
-    coloraxis_showscale=False,
+selected_methods = st.multiselect(
+    "Métodos a comparar",
+    METHOD_KEYS,
+    default=METHOD_KEYS,
+    format_func=lambda k: METHOD_LABELS[k],
 )
 
-st.plotly_chart(
-    fig_consensus,
-    use_container_width=True,
-)
+if len(selected_methods) < 2:
+    st.info("Selecciona al menos dos métodos para compararlos.")
+else:
+    rank_cols = [f"Rank_{k}" for k in selected_methods]
+
+    consensus = ranked[["Jugador", "Equipo", "Valor (€)"] + rank_cols].copy()
+    consensus["Ranking promedio"] = consensus[rank_cols].mean(axis=1)
+    consensus["Mejor posición"] = consensus[rank_cols].min(axis=1)
+    consensus["Peor posición"] = consensus[rank_cols].max(axis=1)
+    consensus["Veces en Top 10"] = (consensus[rank_cols] <= 10).sum(axis=1)
+    consensus = consensus.sort_values(
+        ["Ranking promedio", "Veces en Top 10"],
+        ascending=[True, False],
+    )
+    top_consensus = consensus.head(top_n)
+
+    tab_cons, tab_heat, tab_corr, tab_3w = st.tabs(
+        [
+            "🏆 Consenso",
+            "🗺️ Posición por método",
+            "🔗 Concordancia entre métodos",
+            "🚦 Decisión Three-Way",
+        ]
+    )
+
+    with tab_cons:
+
+        fig_consensus = go.Figure()
+
+        plot_cons = top_consensus.iloc[::-1]
+
+        fig_consensus.add_trace(
+            go.Bar(
+                x=plot_cons["Peor posición"] - plot_cons["Mejor posición"],
+                base=plot_cons["Mejor posición"],
+                y=plot_cons["Jugador"],
+                orientation="h",
+                marker_color="rgba(98,230,214,0.25)",
+                name="Rango (mejor–peor)",
+                hovertemplate="Mejor #%{base}<extra></extra>",
+            )
+        )
+
+        fig_consensus.add_trace(
+            go.Scatter(
+                x=plot_cons["Ranking promedio"],
+                y=plot_cons["Jugador"],
+                mode="markers",
+                marker=dict(size=12, color="#b7f36b"),
+                name="Ranking promedio",
+                customdata=plot_cons[["Veces en Top 10"]],
+                hovertemplate=(
+                    "Promedio %{x:.1f}<br>"
+                    "Top 10 en %{customdata[0]} métodos<extra></extra>"
+                ),
+            )
+        )
+
+        fig_consensus.update_layout(
+            template="plotly_dark",
+            height=max(400, top_n * 27),
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            xaxis_title="Posición en el ranking (1 = mejor)",
+            legend=dict(orientation="h", y=1.06),
+            margin=dict(l=10, r=10, t=30, b=10),
+        )
+
+        st.plotly_chart(fig_consensus, use_container_width=True)
+
+        st.caption(
+            "Punto = ranking promedio entre los métodos elegidos; barra = "
+            "rango entre su mejor y su peor posición. Barras cortas indican "
+            "un jugador robusto: todos los métodos coinciden."
+        )
+
+    with tab_heat:
+
+        heat = top_consensus.set_index("Jugador")[rank_cols]
+        heat.columns = [METHOD_LABELS[k] for k in selected_methods]
+
+        fig_heat = px.imshow(
+            heat,
+            text_auto=True,
+            aspect="auto",
+            color_continuous_scale=["#b7f36b", "#62e6d6", "#153e52"],
+            zmin=1,
+            zmax=max(30, top_n * 2),
+            template="plotly_dark",
+        )
+
+        fig_heat.update_layout(
+            height=max(400, top_n * 28),
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            coloraxis_colorbar_title="Rank",
+            margin=dict(l=10, r=10, t=20, b=10),
+        )
+        fig_heat.update_xaxes(side="top")
+
+        st.plotly_chart(fig_heat, use_container_width=True)
+
+        st.caption(
+            "Posición de los jugadores del consenso en cada método "
+            "(verde = arriba en el ranking)."
+        )
+
+    with tab_corr:
+
+        corr = ranked[rank_cols].corr(method="spearman")
+        corr.index = corr.columns = [
+            METHOD_LABELS[k] for k in selected_methods
+        ]
+
+        fig_corr = px.imshow(
+            corr,
+            text_auto=".2f",
+            aspect="auto",
+            zmin=-1,
+            zmax=1,
+            color_continuous_scale=["#7a2e3a", "#0b1727", "#62e6d6"],
+            template="plotly_dark",
+        )
+
+        fig_corr.update_layout(
+            height=620,
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            coloraxis_colorbar_title="ρ",
+            margin=dict(l=10, r=10, t=20, b=10),
+        )
+
+        st.plotly_chart(fig_corr, use_container_width=True)
+
+        off_diag = corr.where(~np.eye(len(corr), dtype=bool)).stack()
+
+        if not off_diag.empty:
+            hi_pair = off_diag.idxmax()
+            lo_pair = off_diag.idxmin()
+            mean_rho = corr.where(
+                ~np.eye(len(corr), dtype=bool)
+            ).stack().mean()
+            cc1, cc2, cc3 = st.columns(3)
+            cc1.metric("ρ de Spearman promedio", f"{mean_rho:.2f}")
+            cc2.metric(
+                "Más parecidos",
+                f"{hi_pair[0]} · {hi_pair[1]}",
+                f"ρ = {off_diag.max():.2f}",
+                delta_color="off",
+            )
+            cc3.metric(
+                "Más distintos",
+                f"{lo_pair[0]} · {lo_pair[1]}",
+                f"ρ = {off_diag.min():.2f}",
+                delta_color="off",
+            )
+
+        st.caption(
+            "Correlación de Spearman entre los rankings completos: 1 = "
+            "mismo orden, 0 = sin relación. Métodos que penalizan fuerte "
+            "el costo (COPRAS) o con pesos propios (MEREC) suelen separarse "
+            "del resto."
+        )
+
+    with tab_3w:
+
+        tw_counts = ranked["Decisión 3-Way"].value_counts()
+
+        t1, t2, t3 = st.columns(3)
+        t1.metric("✅ Aceptar", int(tw_counts.get("Aceptar", 0)))
+        t2.metric("🟡 Frontera", int(tw_counts.get("Frontera", 0)))
+        t3.metric("⛔ Rechazar", int(tw_counts.get("Rechazar", 0)))
+
+        fig_tw = px.histogram(
+            ranked,
+            x="Puntaje_THREE_WAY",
+            color="Decisión 3-Way",
+            nbins=40,
+            color_discrete_map={
+                "Aceptar": "#b7f36b",
+                "Frontera": "#f2c94c",
+                "Rechazar": "#7a2e3a",
+            },
+            category_orders={
+                "Decisión 3-Way": ["Aceptar", "Frontera", "Rechazar"]
+            },
+            template="plotly_dark",
+        )
+        fig_tw.add_vline(x=tw_alpha, line_dash="dot", line_color="#b7f36b",
+                         annotation_text=f"α = {tw_alpha:.2f}")
+        fig_tw.add_vline(x=tw_beta, line_dash="dot", line_color="#ff8a80",
+                         annotation_text=f"β = {tw_beta:.2f}",
+                         annotation_position="top left")
+        fig_tw.update_layout(
+            height=360,
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            xaxis_title="Probabilidad compuesta PC = Σ w·N",
+            yaxis_title="Jugadores",
+            legend_title_text="",
+            margin=dict(l=10, r=10, t=30, b=10),
+        )
+        st.plotly_chart(fig_tw, use_container_width=True)
+
+        accepted = ranked[ranked["Decisión 3-Way"] == "Aceptar"].sort_values(
+            "Puntaje_THREE_WAY", ascending=False
+        )
+        if not accepted.empty:
+            st.markdown("**Shortlist aceptada**")
+            st.dataframe(
+                accepted[["Jugador", "Equipo", "Valor (€)", "npxg",
+                          "Puntaje_THREE_WAY"]]
+                .rename(columns={"npxg": "NPxG/90",
+                                 "Puntaje_THREE_WAY": "PC"})
+                .head(25),
+                use_container_width=True,
+                hide_index=True,
+            )
 
 
 # ============================================================
 # PESOS
 # ============================================================
 
-c1, c2 = st.columns(2)
+st.markdown("---")
 
-with c1:
+st.markdown(
+    '<div class="section-label">Comparación de métodos de pesos</div>',
+    unsafe_allow_html=True,
+)
 
-    st.markdown(
-        "#### ⚖️ Pesos AHP"
-    )
+weights_long = pd.DataFrame(
+    [
+        {"Método": name, "Criterio": crit, "Peso": float(w)}
+        for name, ws in (
+            {"Manual (sliders)": manual_weights} | all_weight_sets
+        ).items()
+        for crit, w in zip(AHP_CRITERIA, ws)
+    ]
+)
 
-    weights_df = pd.DataFrame(
-        {
-            "Criterio": AHP_CRITERIA,
-            "Peso": effective_weights,
-        }
-    )
+fig_weights = px.bar(
+    weights_long,
+    x="Método",
+    y="Peso",
+    color="Criterio",
+    text=weights_long["Peso"].map(lambda x: f"{x:.0%}"),
+    color_discrete_sequence=["#b7f36b", "#62e6d6", "#5b8def", "#ff8a80"],
+    template="plotly_dark",
+)
 
-    fig_weights = px.bar(
-        weights_df,
-        x="Peso",
-        y="Criterio",
-        orientation="h",
-        text=weights_df["Peso"].map(
-            lambda x: f"{x:.1%}"
-        ),
-        template="plotly_dark",
-    )
+fig_weights.update_layout(
+    barmode="stack",
+    height=420,
+    paper_bgcolor="rgba(0,0,0,0)",
+    plot_bgcolor="rgba(0,0,0,0)",
+    yaxis_tickformat=".0%",
+    legend_title_text="",
+    legend=dict(orientation="h", y=1.08),
+    margin=dict(l=10, r=10, t=40, b=10),
+)
 
-    fig_weights.update_layout(
-        height=300,
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        xaxis_tickformat=".0%",
-    )
+fig_weights.update_traces(textposition="inside")
 
-    st.plotly_chart(
-        fig_weights,
-        use_container_width=True,
-    )
+st.plotly_chart(fig_weights, use_container_width=True)
 
+ahp_cons = ahp_consistency(np.array(SETTINGS["ahp"]["saaty_matrix"], dtype=float))
+bwm_res = bwm_weights(
+    SETTINGS["bwm"]["best_to_others"],
+    SETTINGS["bwm"]["others_to_worst"],
+)
+anp_res = anp_weights(np.array(SETTINGS["anp"]["influence"], dtype=float))
 
-with c2:
+w1, w2, w3, w4 = st.columns(4)
+w1.metric("AHP · CR", f"{ahp_cons['CR']:.3f}",
+          "consistente" if ahp_cons["CR"] < 0.1 else "revisar",
+          delta_color="off")
+w2.metric("BWM · CR", f"{bwm_res.consistency_ratio:.3f}",
+          f"ξ = {bwm_res.xi:.2f}", delta_color="off")
+w3.metric("ANP · supermatriz límite",
+          f"{anp_res.iterations} iteraciones", delta_color="off")
+w4.metric("Pesos en uso", weight_method)
 
-    st.markdown(
-        "#### 🎯 Pesos MEREC"
-    )
-
-    merec_df = pd.DataFrame(
-        {
-            "Criterio": [
-                "NPxG/90",
-                "Tiros al arco/90",
-                "xA/90",
-                "Valor de mercado",
-            ],
-            "Peso": merec_weights,
-        }
-    )
-
-    fig_merec = px.bar(
-        merec_df,
-        x="Peso",
-        y="Criterio",
-        orientation="h",
-        text=merec_df["Peso"].map(
-            lambda x: f"{x:.1%}"
-        ),
-        template="plotly_dark",
-    )
-
-    fig_merec.update_layout(
-        height=300,
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        xaxis_tickformat=".0%",
-    )
-
-    st.plotly_chart(
-        fig_merec,
-        use_container_width=True,
-    )
+st.caption(
+    "Subjetivos (juicio experto, editables en config/settings.yaml): AHP, "
+    "SWARA, BWM, ANP. Objetivos (salen de los datos filtrados): Entropía, "
+    "MEREC, ITARA. Cambia el método en la barra lateral para ver cómo se "
+    "mueve el ranking."
+)
 
 
 # ============================================================
@@ -1535,7 +1785,7 @@ with p2:
 with p3:
 
     st.markdown(
-        f"#### Algoritmo {method}"
+        f"#### Algoritmo {method_label}"
     )
 
     st.metric(
@@ -1558,6 +1808,44 @@ with p3:
             "Edad",
             f"{int(profile['Edad'])} años",
         )
+
+    st.markdown(
+        f"**Decisión Three-Way:** {profile['Decisión 3-Way']}"
+    )
+
+
+# Posición del jugador en todos los métodos
+player_ranks = pd.DataFrame(
+    {
+        "Método": [METHOD_LABELS[k] for k in METHOD_KEYS],
+        "Posición": [int(profile[f"Rank_{k}"]) for k in METHOD_KEYS],
+    }
+).sort_values("Posición")
+
+fig_player_ranks = px.bar(
+    player_ranks,
+    x="Método",
+    y="Posición",
+    text="Posición",
+    color="Posición",
+    color_continuous_scale=["#b7f36b", "#62e6d6", "#153e52"],
+    template="plotly_dark",
+)
+fig_player_ranks.update_layout(
+    height=300,
+    paper_bgcolor="rgba(0,0,0,0)",
+    plot_bgcolor="rgba(0,0,0,0)",
+    coloraxis_showscale=False,
+    yaxis=dict(autorange="reversed", title="Posición (1 = mejor)"),
+    xaxis_title="",
+    margin=dict(l=10, r=10, t=30, b=10),
+    title=dict(
+        text=f"Posición de {profile['Jugador'].title()} en los "
+        f"{len(METHOD_KEYS)} métodos (de {len(ranked)})",
+        font=dict(size=14),
+    ),
+)
+st.plotly_chart(fig_player_ranks, use_container_width=True)
 
 
 # ============================================================
@@ -1808,9 +2096,7 @@ st.markdown(
 )
 
 show_cols = [
-    "Rank_TOPSIS",
-    "Rank_MABAC",
-    "Rank_MEREC",
+    rank_col,
     "Jugador",
     "Edad",
     "Equipo",
@@ -1820,9 +2106,9 @@ show_cols = [
     "npxg",
     "shots_on_target",
     "xa",
-    "Puntaje_TOPSIS",
-    "Puntaje_MABAC",
-    "Puntaje_MEREC",
+    "Decisión 3-Way",
+] + [f"Rank_{k}" for k in METHOD_KEYS if f"Rank_{k}" != rank_col] + [
+    f"Puntaje_{k}" for k in METHOD_KEYS
 ]
 
 table = ranked[
@@ -1837,10 +2123,9 @@ table = ranked[
         "npxg": "NPxG/90",
         "shots_on_target": "Tiros al arco/90",
         "xa": "xA/90",
-        "Puntaje_TOPSIS": "Score TOPSIS",
-        "Puntaje_MABAC": "Score MABAC",
-        "Puntaje_MEREC": "Score MEREC",
     }
+    | {f"Rank_{k}": f"Rank {METHOD_LABELS[k]}" for k in METHOD_KEYS}
+    | {f"Puntaje_{k}": f"Score {METHOD_LABELS[k]}" for k in METHOD_KEYS}
 )
 
 st.dataframe(
